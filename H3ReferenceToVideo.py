@@ -18,8 +18,21 @@ MAX_PIXELS = 768 * 1344
 REF_IMAGE_SHORT_EDGE = 2048
 FPS = 24
 AUDIO_LATENT_FPS = 40
+
+
 # 参考图尺寸下拉选项：match/max 保持原语义，数字为预设长边
-REF_IMAGE_SIZE_OPTIONS = ["match", "1056", "1280", "1536", "1920", "max"]
+REF_IMAGE_SIZE_OPTIONS = ["match", "864", "1056", "1280", "1536", "1920", "max"]
+
+# --------------------------------------------------------------
+# 相同参数下，不同 ref_image_size 尺寸的采样速度(512-8秒)：
+# 参考图的分辨率越高，采样速度明显越慢，建议选择 1280 左右。
+# --------------------------------------------------------------
+# match : 9s/it （64s） <-- 抽卡用
+# 864  : 14s/it （61s）
+# 1056 : 15s/it （91s）
+# 1280 : 16s/it （99s） <-- 生成用
+# 1536 : 20s/it （150s）
+# --------------------------------------------------------------
 
 
 def align_frame_count(n):
@@ -80,9 +93,9 @@ def _calc_ref_image_target_size(img_w, img_h, ref_image_size, gen_width, gen_hei
         # 按参考管线 2048 短边上限等比缩小（不放大）
         scale = min(1.0, REF_IMAGE_SHORT_EDGE / min(img_w, img_h))
     else:
-        # 预设长边：等比缩放到指定长边，短边按比例计算
+        # 预设长边上限：仅当最长边超过该值时等比缩小，不放大
         target_long = int(ref_image_size)
-        scale = target_long / max(img_w, img_h)
+        scale = min(1.0, target_long / max(img_w, img_h))
     return _align_dim(img_w * scale), _align_dim(img_h * scale)
     
     
@@ -121,10 +134,10 @@ class H3ReferenceToVideo(io.ComfyNode):
                 io.Int.Input("height", default=768, min=32, max=nodes.MAX_RESOLUTION, step=32),
                 io.Int.Input("length", default=124, min=5, max=3600, step=17, tooltip="Frame count at 24 fps, (124 = ~5s, trained range is ~124-362)"),
                 io.Combo.Input("ref_image_size", options=REF_IMAGE_SIZE_OPTIONS, default="match",
-                    tooltip="Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 1024/1280/1536/1920 scale the long edge to that size (short edge follows aspect, 32-aligned); 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so larger sizes are slower."),
+                    tooltip="Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 1056/1280/1536/1920 cap the long edge to that size (down only, short edge follows aspect, 32-aligned); 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so larger sizes are slower."),
                 io.Autogrow.Input("ref_images", optional=True,
                     template=io.Autogrow.TemplatePrefix(
-                        input=io.Image.Input("ref_image", tooltip="Reference image. Sized by ref_image_size: match/max never upscale; numeric presets scale the long edge to the selected value."),
+                        input=io.Image.Input("ref_image", tooltip="Reference image. Sized by ref_image_size: match/max/numeric presets never upscale; numeric presets only downscale when the long edge exceeds the selected value."),
                         prefix="ref_image_", min=0, max=9)),
                 io.Autogrow.Input("ref_videos", optional=True,
                     template=io.Autogrow.TemplatePrefix(
@@ -207,15 +220,39 @@ class H3ReferenceToVideo(io.ComfyNode):
         if ref_blocks:
             cond = node_helpers.conditioning_set_values(cond, {"minimax_refs": ref_blocks})
         return io.NodeOutput(cond, latent)
-    
-    
+
+
+class H3RefImageSize(io.ComfyNode):
+    """参考图尺寸选择节点，输出与 H3ReferenceToVideo.ref_image_size 相同的下拉值。"""
+
+    @classmethod
+    def define_schema(cls):
+        """定义与 ref_image_size 一致的下拉输入，并输出所选值供连线使用。"""
+        return io.Schema(
+            node_id="H3RefImageSize",
+            description="Select a reference image size option and output it for H3ReferenceToVideo.ref_image_size.",
+            display_name="H3 Ref Image Size",
+            category="model/conditioning/minimax",
+            inputs=[
+                io.Combo.Input("ref_image_size", options=REF_IMAGE_SIZE_OPTIONS, default="match",
+                    tooltip="Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 1056/1280/1536/1920 cap the long edge to that size (down only, short edge follows aspect, 32-aligned); 'max' uses the reference pipeline's 2048px short edge for best identity fidelity."),
+            ],
+            outputs=[io.Combo.Output("ref_image_size", display_name="ref_image_size")],
+        )
+
+    @classmethod
+    def execute(cls, ref_image_size="match") -> io.NodeOutput:
+        """原样返回所选参考图尺寸选项。"""
+        return io.NodeOutput(ref_image_size)
 
 
 NODE_CLASS_MAPPINGS = {
     "H3ReferenceToVideo": H3ReferenceToVideo,
+    "H3RefImageSize": H3RefImageSize,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "H3ReferenceToVideo": "H3 Reference to Video (Custom)",
+    "H3RefImageSize": "H3 Ref Image Size",
 }
 NODE_REGISTRY = {
     "classes": NODE_CLASS_MAPPINGS,
