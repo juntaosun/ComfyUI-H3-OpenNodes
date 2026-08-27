@@ -4,6 +4,10 @@ import torch
 from comfy_api.latest import ComfyExtension, io
 
 
+# 图像长边像素。短边按所选比例等比计算。
+# 特别说明： 对于 H3 视频生成最小尺寸必须 >= 640, 否则多参会不正确。
+
+
 class AspectRatio(str, Enum):
     SQUARE = "1:1 (Square)"
     PHOTO_V = "2:3 (Portrait Photo)"
@@ -104,10 +108,10 @@ class ImageResolution(io.ComfyNode):
                 io.Int.Input(
                     "long_side",
                     default=1024,
-                    min=8,
+                    min=640,
                     max=16384,
                     step=8,
-                    tooltip="图像长边像素。短边按所选比例等比计算。",
+                    tooltip="图像长边像素。短边按所选比例等比计算。特别说明： 对于 H3 视频生成最小尺寸必须 >= 640, 否则多参会不正确。",
                 ),
             ],
             outputs=[

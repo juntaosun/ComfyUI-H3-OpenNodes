@@ -24,7 +24,7 @@ AUDIO_LATENT_FPS = 40
 REF_IMAGE_SIZE_OPTIONS = ["match", "864", "1056", "1280", "1536", "1920", "max"]
 
 # --------------------------------------------------------------
-# 相同参数下，不同 ref_image_size 尺寸的采样速度(512-8秒)：
+# 相同参数下，不同 ref_image_size 尺寸的采样速度(640-8秒)：
 # 参考图的分辨率越高，采样速度明显越慢，建议选择 1280 左右。
 # --------------------------------------------------------------
 # match : 9s/it （64s） <-- 抽卡用
@@ -33,6 +33,8 @@ REF_IMAGE_SIZE_OPTIONS = ["match", "864", "1056", "1280", "1536", "1920", "max"]
 # 1280 : 16s/it （99s） <-- 生成用
 # 1536 : 20s/it （150s）
 # --------------------------------------------------------------
+
+# 特别说明： 对于 H3 视频生成最小尺寸必须 >= 640, 否则多参会不正确。
 
 
 def align_frame_count(n):
@@ -167,6 +169,7 @@ class H3ReferenceToVideo(io.ComfyNode):
             if img is None:
                 continue
             h, w = img.shape[1], img.shape[2]
+            # 修改匹配:
             tw, th = _calc_ref_image_target_size(w, h, ref_image_size, width, height)
             resized = _resize(img[:1], tw, th, "disabled")
             z = vae.encode(resized)
@@ -180,10 +183,8 @@ class H3ReferenceToVideo(io.ComfyNode):
             # index-paired soundtrack: ref_video_audio_N belongs to ref_video_N
             soundtrack = ref_video_audios.get("ref_video_audio_" + name.rsplit("_", 1)[-1])
             vh, vw = video_frames.shape[1], video_frames.shape[2]
-            cw, ch = adapt_canvas(vw, vh)
-            if vw * vh < cw * ch:
-                cw = max(CANVAS_MULTIPLE, round(vw / CANVAS_MULTIPLE) * CANVAS_MULTIPLE)
-                ch = max(CANVAS_MULTIPLE, round(vh / CANVAS_MULTIPLE) * CANVAS_MULTIPLE)
+            # 修改匹配:
+            cw, ch = _calc_ref_image_target_size(vw, vh, ref_image_size, width, height)
             frames = _resize(video_frames, cw, ch, "disabled")
             if frames.shape[0] > frame_count:
                 frames = frames[:frame_count]
