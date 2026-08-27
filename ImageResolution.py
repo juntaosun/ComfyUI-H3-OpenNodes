@@ -27,6 +27,9 @@ ASPECT_RATIOS: dict[AspectRatio, tuple[int, int]] = {
 }
 
 # multiple 下拉可选值，默认对齐到 8 像素。
+# 标准视频使用 8
+# wan 模型使用 16
+# H3 模型使用 32
 MULTIPLE_OPTIONS = ["8", "16", "32"]
 
 
