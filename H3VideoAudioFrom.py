@@ -294,8 +294,10 @@ class H3VideoAudioFrom:
             if gradient_frame_count > 0:
                 # 关闭线性模式时，每一帧使用相同的最小噪声强度。
                 # sampling_noise_strength = 0.4
-                noise_center = 0.5 # 中间
-                noise_near = 0.5  # 邻近中间的起始帧
+                noise_center = 0.4 # 中间
+                # 邻近拼接点的起始帧
+                # 如果加噪, 拼接处可能有未去除的噪点, 暂定 = 0 不加噪
+                noise_near = 0.0  
                 if from_end:
                     # [首0.1][...noise_center...][尾0.2]
                     sampling_noise_strength = torch.cat([
@@ -341,12 +343,6 @@ class H3VideoAudioFrom:
                 sampling_noise_strength[middle_index] = noise_strength
                 # next_middle_index
                 next_middle_index = middle_index + 1
-                if next_middle_index < strength_count:
-                    sampling_noise_strength[next_middle_index] = noise_strength
-                next_middle_index = next_middle_index + 1
-                if next_middle_index < strength_count:
-                    sampling_noise_strength[next_middle_index] = noise_strength
-                next_middle_index = next_middle_index + 1
                 if next_middle_index < strength_count:
                     sampling_noise_strength[next_middle_index] = noise_strength
                 next_middle_index = next_middle_index + 1

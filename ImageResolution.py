@@ -5,7 +5,7 @@ from comfy_api.latest import ComfyExtension, io
 
 
 # 图像长边像素。短边按所选比例等比计算。
-# 特别说明： 对于 H3 视频生成最小尺寸必须 >= 640, 否则多参会不正确。
+# 特别说明： 对于 H3 视频生成尺寸 >= 640 以上效果更好。
 
 
 class AspectRatio(str, Enum):
@@ -108,10 +108,10 @@ class ImageResolution(io.ComfyNode):
                 io.Int.Input(
                     "long_side",
                     default=1024,
-                    min=640,
+                    min=512,
                     max=16384,
                     step=8,
-                    tooltip="图像长边像素。短边按所选比例等比计算。特别说明： 对于 H3 视频生成最小尺寸必须 >= 640, 否则多参会不正确。",
+                    tooltip="图像长边像素。短边按所选比例等比计算。特别说明： 对于 H3 视频生成尺寸 >= 640 以上效果更好。",
                 ),
             ],
             outputs=[

@@ -6,6 +6,7 @@ Minimax H3 Latent Upscaler - ComfyUI 推理节点 (纯3D卷积版本)
 - 模型从 ComfyUI/models/latent_upscale_models/ 加载
 - 推理结束后将模型踢回 CPU，下次从缓存取出时再搬回设备
 - https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler
+- 特别注意: 多参数据列表 minimax_refs, 无需放大按原样提供, 与 latent 尺寸无关
 """
 import torch
 import torch.nn as nn
@@ -522,40 +523,39 @@ def _upscale_keyframe_entry(kf, target_h, target_w, get_model, precision):
     return out
 
 
-def _upscale_ref_entry(ref, target_h, target_w, get_model, precision):
-    """使用 3D 放大模型缩放 minimax_refs 中带视频 latent 的引用块。
+# def _upscale_ref_entry(ref, target_h, target_w, get_model, precision):
+#     """使用 3D 放大模型缩放 minimax_refs 中带视频 latent 的引用块。
 
-    - image / video / video_audio：用模型放大 latent，并同步 latent_h / latent_w。
-    - audio 纯音频块：原样浅拷贝。
-    - audio_latent / ref_audio_t 永不放大。
-    """
-    if not isinstance(ref, dict):
-        return ref
-    out = dict(ref)
-    kind = out.get("kind", "")
-    has_video = "latent" in out and out["latent"] is not None
-    if kind == "audio" or not has_video:
-        return out
-    scaled = _upscale_video_tensor_with_model(
-        out["latent"], target_h, target_w, get_model, precision, layout="cthw")
-    out["latent"] = scaled
-    # 同步 stock ref2va 使用的网格元数据
-    if getattr(scaled, "ndim", 0) == 5:
-        out["latent_h"] = int(scaled.shape[3])
-        out["latent_w"] = int(scaled.shape[4])
-        if "latent_t" in out:
-            out["latent_t"] = int(scaled.shape[2])
-    elif getattr(scaled, "ndim", 0) == 4:
-        out["latent_h"] = int(scaled.shape[2])
-        out["latent_w"] = int(scaled.shape[3])
-    return out
+#     - image / video / video_audio：用模型放大 latent，并同步 latent_h / latent_w。
+#     - audio 纯音频块：原样浅拷贝。
+#     - audio_latent / ref_audio_t 永不放大。
+#     """
+#     if not isinstance(ref, dict):
+#         return ref
+#     out = dict(ref)
+#     kind = out.get("kind", "")
+#     has_video = "latent" in out and out["latent"] is not None
+#     if kind == "audio" or not has_video:
+#         return out
+#     scaled = _upscale_video_tensor_with_model(
+#         out["latent"], target_h, target_w, get_model, precision, layout="cthw")
+#     out["latent"] = scaled
+#     # 同步 stock ref2va 使用的网格元数据
+#     if getattr(scaled, "ndim", 0) == 5:
+#         out["latent_h"] = int(scaled.shape[3])
+#         out["latent_w"] = int(scaled.shape[4])
+#         if "latent_t" in out:
+#             out["latent_t"] = int(scaled.shape[2])
+#     elif getattr(scaled, "ndim", 0) == 4:
+#         out["latent_h"] = int(scaled.shape[2])
+#         out["latent_w"] = int(scaled.shape[3])
+#     return out
 
 
 def _upscale_conditioning(conditioning, target_h, target_w, get_model, precision):
     """使用 3D 放大模型同步缩放 CONDITIONING 内的视频 keyframe / 视频类 refs。
 
     - minimax_keyframes[*].latent -> 目标网格
-    - minimax_refs 中带 video latent 的 image/video 块同上；audio 不动
     - 文本 embedding、minimax_frame_count、时间锚点不改
     - 返回新列表；输入为 None 则返回 None
     """
@@ -569,6 +569,7 @@ def _upscale_conditioning(conditioning, target_h, target_w, get_model, precision
         emb, extra = entry[0], entry[1]
         d = extra.copy() if isinstance(extra, dict) else {}
 
+        # 处理关键帧 , 该数据可能来自 MiniMaxH3AddGuide
         prior = d.get("minimax_keyframes")
         if prior:
             d["minimax_keyframes"] = [
@@ -577,13 +578,14 @@ def _upscale_conditioning(conditioning, target_h, target_w, get_model, precision
                 for kf in prior
             ]
 
-        refs = d.get("minimax_refs")
-        if refs:
-            d["minimax_refs"] = [
-                _upscale_ref_entry(
-                    ref, target_h, target_w, get_model, precision)
-                for ref in refs
-            ]
+        # 特别注意: 多参数据列表 minimax_refs, 无需放大按原样提供, 与 latent 尺寸无关
+        # refs = d.get("minimax_refs")
+        # if refs:
+        #     d["minimax_refs"] = [
+        #         _upscale_ref_entry(
+        #             ref, target_h, target_w, get_model, precision)
+        #         for ref in refs
+        #     ]
 
         out.append([emb, d])
     return out

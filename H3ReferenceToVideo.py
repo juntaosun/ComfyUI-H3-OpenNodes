@@ -28,10 +28,10 @@ REF_IMAGE_SIZE_OPTIONS = ["match", "864", "1056", "1280", "1536", "1920", "max"]
 # 参考图的分辨率越高，采样速度明显越慢，建议选择 1280 左右。
 # --------------------------------------------------------------
 # match : 9s/it （64s） <-- 抽卡用
-# 864  : 14s/it （61s）
+# 864  : 14s/it （61s） <-- 抽卡用
 # 1056 : 15s/it （91s）
 # 1280 : 16s/it （99s） <-- 生成用
-# 1536 : 20s/it （150s）
+# 1536 : 20s/it （150s）<-- 生成用
 # --------------------------------------------------------------
 
 # 特别说明： 对于 H3 视频生成最小尺寸必须 >= 640, 否则多参会不正确。
@@ -111,6 +111,94 @@ def _encode_ref_audio(audio_vae, audio):
     return z, z.shape[-1]
 
 
+def _cached_encode_ref_audio(audio_vae, audio, cache, key):
+    """按 key 缓存参考音频编码，避免 low/high 两路重复调用音频 VAE。"""
+    if key not in cache:
+        cache[key] = _encode_ref_audio(audio_vae, audio)
+    return cache[key]
+
+
+def _build_reference_payload(vae, audio_vae, width, height, frame_count, ref_image_size,
+                             ref_images, ref_videos, ref_video_audios, ref_audios,
+                             audio_cache):
+    """按指定 ref_image_size 构建 tokenizer 展示项与 DiT 参考块。
+
+    图像与视频按该尺寸缩放并编码；音频 latent 通过 audio_cache 复用，不受尺寸影响。
+    """
+    ref_items = []   # for the tokenizer presentation, in request order
+    ref_blocks = []  # for the DiT payload, same order
+
+    for img in (ref_images or {}).values():
+        if img is None:
+            continue
+        h, w = img.shape[1], img.shape[2]
+        # 修改匹配:
+        tw, th = _calc_ref_image_target_size(w, h, ref_image_size, width, height)
+        resized = _resize(img[:1], tw, th, "disabled")
+        z = vae.encode(resized)
+        ref_items.append({"type": "image", "data": resized})
+        ref_blocks.append({"kind": "image", "latent_h": th // 16, "latent_w": tw // 16, "latent": z})
+
+    ref_video_audios = ref_video_audios or {}
+    for name, video_frames in (ref_videos or {}).items():
+        if video_frames is None:
+            continue
+        # index-paired soundtrack: ref_video_audio_N belongs to ref_video_N
+        audio_key = name.rsplit("_", 1)[-1]
+        soundtrack = ref_video_audios.get("ref_video_audio_" + audio_key)
+        vh, vw = video_frames.shape[1], video_frames.shape[2]
+        # 修改匹配:
+        cw, ch = _calc_ref_image_target_size(vw, vh, ref_image_size, width, height)
+        frames = _resize(video_frames, cw, ch, "disabled")
+        if frames.shape[0] > frame_count:
+            frames = frames[:frame_count]
+        n = frames.shape[0]
+        if n < 5:
+            raise ValueError("MiniMax H3 reference videos need at least 5 frames (~0.2s at 24 fps)")
+        while n % 17 != 5:
+            n -= 1
+        frames = frames[:n]
+        z = vae.encode(frames)
+        audio_latent, ref_audio_t = (None, 0)
+        if soundtrack is not None:
+            audio_latent, ref_audio_t = _cached_encode_ref_audio(
+                audio_vae, soundtrack, audio_cache, ("video_audio", audio_key))
+            # the soundtrack gets its own <Audio j> label, emitted before <Video k>
+            ref_items.append({"type": "audio"})
+        # Qwen sees the video at 2 fps with timestamps
+        sample_idx = list(range(0, frames.shape[0], FPS // 2))
+        qwen_frames = frames[sample_idx]
+        ref_items.append({"type": "video", "data": qwen_frames,
+                          "timestamps": [i / 2.0 for i in range(len(sample_idx))]})
+        ref_blocks.append({"kind": "video_audio" if ref_audio_t else "video",
+                           "latent_t": z.shape[2], "latent_h": ch // 16, "latent_w": cw // 16,
+                           "ref_audio_t": ref_audio_t, "latent": z, "audio_latent": audio_latent})
+
+    for name, audio in (ref_audios or {}).items():
+        if audio is None:
+            continue
+        audio_latent, ref_audio_t = _cached_encode_ref_audio(
+            audio_vae, audio, audio_cache, ("audio", name))
+        ref_items.append({"type": "audio"})
+        ref_blocks.append({"kind": "audio", "ref_audio_t": ref_audio_t, "audio_latent": audio_latent})
+
+    return ref_items, ref_blocks
+
+
+def _encode_positive(clip, vae, audio_vae, prompt, width, height, frame_count,
+                     ref_image_size, ref_images, ref_videos, ref_video_audios,
+                     ref_audios, audio_cache):
+    """按指定参考尺寸编码 positive conditioning，音频块来自共享缓存。"""
+    ref_items, ref_blocks = _build_reference_payload(
+        vae, audio_vae, width, height, frame_count, ref_image_size,
+        ref_images, ref_videos, ref_video_audios, ref_audios, audio_cache)
+    tokens = clip.tokenize(prompt, minimax_ref_items=ref_items)
+    cond = clip.encode_from_tokens_scheduled(tokens)
+    if ref_blocks:
+        cond = node_helpers.conditioning_set_values(cond, {"minimax_refs": ref_blocks})
+    return cond
+
+
 class H3ReferenceToVideo(io.ComfyNode):
     """ref2va: prompt + reference images / videos / audio -> conditioning + AV latent.
 
@@ -122,6 +210,7 @@ class H3ReferenceToVideo(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
+        """定义双参考尺寸输入与 positive_low / positive_high 双路输出。"""
         return io.Schema(
             node_id="H3ReferenceToVideo",
             description="<Picture i> / <Video k> / <Audio j> reference conditioning for MiniMax H3. Use the same tags when prompting.",
@@ -135,11 +224,13 @@ class H3ReferenceToVideo(io.ComfyNode):
                 io.Int.Input("width", default=1344, min=32, max=nodes.MAX_RESOLUTION, step=32),
                 io.Int.Input("height", default=768, min=32, max=nodes.MAX_RESOLUTION, step=32),
                 io.Int.Input("length", default=124, min=5, max=3600, step=17, tooltip="Frame count at 24 fps, (124 = ~5s, trained range is ~124-362)"),
-                io.Combo.Input("ref_image_size", options=REF_IMAGE_SIZE_OPTIONS, default="match",
-                    tooltip="Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 1056/1280/1536/1920 cap the long edge to that size (down only, short edge follows aspect, 32-aligned); 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so larger sizes are slower."),
+                io.Combo.Input("ref_image_size_low", options=REF_IMAGE_SIZE_OPTIONS, default="match",
+                    tooltip="Low-res reference image sizing for positive_low. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 1056/1280/1536/1920 cap the long edge to that size (down only, short edge follows aspect, 32-aligned); 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so larger sizes are slower."),
+                io.Combo.Input("ref_image_size_high", options=REF_IMAGE_SIZE_OPTIONS, default="1280",
+                    tooltip="High-res reference image sizing for positive_high. Options and downscale rules match ref_image_size_low. Use a larger preset here for the second sampling stage."),
                 io.Autogrow.Input("ref_images", optional=True,
                     template=io.Autogrow.TemplatePrefix(
-                        input=io.Image.Input("ref_image", tooltip="Reference image. Sized by ref_image_size: match/max/numeric presets never upscale; numeric presets only downscale when the long edge exceeds the selected value."),
+                        input=io.Image.Input("ref_image", tooltip="Reference image. Sized separately by ref_image_size_low / ref_image_size_high: match/max/numeric presets never upscale; numeric presets only downscale when the long edge exceeds the selected value."),
                         prefix="ref_image_", min=0, max=9)),
                 io.Autogrow.Input("ref_videos", optional=True,
                     template=io.Autogrow.TemplatePrefix(
@@ -154,73 +245,31 @@ class H3ReferenceToVideo(io.ComfyNode):
                         input=io.Audio.Input("ref_audio", tooltip="Standalone reference audio"),
                         prefix="ref_audio_", min=0, max=3)),
             ],
-            outputs=[io.Conditioning.Output(display_name="positive"), io.Latent.Output()],
+            outputs=[
+                io.Conditioning.Output(display_name="positive_low"),
+                io.Conditioning.Output(display_name="positive_high"),
+                io.Latent.Output(),
+                ],
         )
 
     @classmethod
-    def execute(cls, clip, vae, audio_vae, prompt, width, height, length, ref_image_size="match",
+    def execute(cls, clip, vae, audio_vae, prompt, width, height, length,
+                ref_image_size_low="match", ref_image_size_high="1280",
                 ref_images=None, ref_videos=None, ref_video_audios=None, ref_audios=None) -> io.NodeOutput:
+        """按 low/high 两套参考尺寸编码 conditioning，并输出共享的空 AV latent。"""
         latent, frame_count = _empty_av_latent(width, height, length)
-
-        ref_items = []   # for the tokenizer presentation, in request order
-        ref_blocks = []  # for the DiT payload, same order
-
-        for img in (ref_images or {}).values():
-            if img is None:
-                continue
-            h, w = img.shape[1], img.shape[2]
-            # 修改匹配:
-            tw, th = _calc_ref_image_target_size(w, h, ref_image_size, width, height)
-            resized = _resize(img[:1], tw, th, "disabled")
-            z = vae.encode(resized)
-            ref_items.append({"type": "image", "data": resized})
-            ref_blocks.append({"kind": "image", "latent_h": th // 16, "latent_w": tw // 16, "latent": z})
-
-        ref_video_audios = ref_video_audios or {}
-        for name, video_frames in (ref_videos or {}).items():
-            if video_frames is None:
-                continue
-            # index-paired soundtrack: ref_video_audio_N belongs to ref_video_N
-            soundtrack = ref_video_audios.get("ref_video_audio_" + name.rsplit("_", 1)[-1])
-            vh, vw = video_frames.shape[1], video_frames.shape[2]
-            # 修改匹配:
-            cw, ch = _calc_ref_image_target_size(vw, vh, ref_image_size, width, height)
-            frames = _resize(video_frames, cw, ch, "disabled")
-            if frames.shape[0] > frame_count:
-                frames = frames[:frame_count]
-            n = frames.shape[0]
-            if n < 5:
-                raise ValueError("MiniMax H3 reference videos need at least 5 frames (~0.2s at 24 fps)")
-            while n % 17 != 5:
-                n -= 1
-            frames = frames[:n]
-            z = vae.encode(frames)
-            audio_latent, ref_audio_t = (None, 0)
-            if soundtrack is not None:
-                audio_latent, ref_audio_t = _encode_ref_audio(audio_vae, soundtrack)
-                # the soundtrack gets its own <Audio j> label, emitted before <Video k>
-                ref_items.append({"type": "audio"})
-            # Qwen sees the video at 2 fps with timestamps
-            sample_idx = list(range(0, frames.shape[0], FPS // 2))
-            qwen_frames = frames[sample_idx]
-            ref_items.append({"type": "video", "data": qwen_frames,
-                              "timestamps": [i / 2.0 for i in range(len(sample_idx))]})
-            ref_blocks.append({"kind": "video_audio" if ref_audio_t else "video",
-                               "latent_t": z.shape[2], "latent_h": ch // 16, "latent_w": cw // 16,
-                               "ref_audio_t": ref_audio_t, "latent": z, "audio_latent": audio_latent})
-
-        for audio in (ref_audios or {}).values():
-            if audio is None:
-                continue
-            audio_latent, ref_audio_t = _encode_ref_audio(audio_vae, audio)
-            ref_items.append({"type": "audio"})
-            ref_blocks.append({"kind": "audio", "ref_audio_t": ref_audio_t, "audio_latent": audio_latent})
-
-        tokens = clip.tokenize(prompt, minimax_ref_items=ref_items)
-        cond = clip.encode_from_tokens_scheduled(tokens)
-        if ref_blocks:
-            cond = node_helpers.conditioning_set_values(cond, {"minimax_refs": ref_blocks})
-        return io.NodeOutput(cond, latent)
+        # 音频不受尺寸影响，两路共享缓存，避免重复编码
+        audio_cache = {}
+        encode_kwargs = dict(
+            clip=clip, vae=vae, audio_vae=audio_vae, prompt=prompt,
+            width=width, height=height, frame_count=frame_count,
+            ref_images=ref_images, ref_videos=ref_videos,
+            ref_video_audios=ref_video_audios, ref_audios=ref_audios,
+            audio_cache=audio_cache,
+        )
+        cond_low = _encode_positive(ref_image_size=ref_image_size_low, **encode_kwargs)
+        cond_high = _encode_positive(ref_image_size=ref_image_size_high, **encode_kwargs)
+        return io.NodeOutput(cond_low, cond_high, latent)
 
 
 class H3RefImageSize(io.ComfyNode):

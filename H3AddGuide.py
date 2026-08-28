@@ -73,9 +73,9 @@ class H3AddGuide(io.ComfyNode):
             category="model/conditioning/minimax",
             description="Anchor an image, a short clip, audio, or a clip with its soundtrack at any frame of a MiniMax H3 video. Chain several nodes to anchor several frames.",
             inputs=[
-                io.Conditioning.Input("positive"),
-                io.Conditioning.Input("positive_scaler", optional=True,
-                                      tooltip="上一节点的 positive_scaler；未连接时默认使用 positive。"),
+                io.Conditioning.Input("positive_low"),
+                io.Conditioning.Input("positive_high", optional=True,
+                                      tooltip="上一节点的 positive_high；未连接时默认使用 positive。"),
                 io.Latent.Input("latent", optional=True),
                 io.Vae.Input("vae", optional=True, tooltip="Video VAE, needed when an image is connected."),
                 io.Vae.Input("audio_vae", optional=True, tooltip="Audio VAE, needed when an audio is connected."),
@@ -88,14 +88,14 @@ class H3AddGuide(io.ComfyNode):
                 io.Combo.Input("crop", options=["center", "disabled"], optional=True, default="disabled"),
             ],
             outputs=[
-                io.Conditioning.Output(display_name="positive"),
-                io.Conditioning.Output(display_name="positive_scaler"),
+                io.Conditioning.Output(display_name="positive_low"),
+                io.Conditioning.Output(display_name="positive_high"),
                 io.Image.Output(display_name="crop_images"),
                 ],
         )
 
     @classmethod
-    def execute(cls, positive, positive_scaler=None,
+    def execute(cls, positive_low, positive_high=None,
                 latent=None, 
                 vae=None, audio_vae=None,
                 image=None, audio=None, 
@@ -164,18 +164,18 @@ class H3AddGuide(io.ComfyNode):
             scaler_keyframe["audio_latent"] = audio_latent
 
         # 未连接时沿用 positive，连接后保留上一节点的高分辨率 guide 链。
-        positive_scaler_input = positive_scaler if positive_scaler is not None else positive
+        positive_high_input = positive_high if positive_high is not None else positive_low
 
-        keyframes = list(positive[0][1].get("minimax_keyframes", []))
+        keyframes = list(positive_low[0][1].get("minimax_keyframes", []))
         keyframes.append(keyframe)
-        positive_output = node_helpers.conditioning_set_values(
-            positive, {"minimax_keyframes": keyframes})
+        positive_low_output = node_helpers.conditioning_set_values(
+            positive_low, {"minimax_keyframes": keyframes})
 
-        scaler_keyframes = list(positive_scaler_input[0][1].get("minimax_keyframes", []))
+        scaler_keyframes = list(positive_high_input[0][1].get("minimax_keyframes", []))
         scaler_keyframes.append(scaler_keyframe)
-        positive_scaler_output = node_helpers.conditioning_set_values(
-            positive_scaler_input, {"minimax_keyframes": scaler_keyframes})
-        return io.NodeOutput(positive_output, positive_scaler_output, crop_images)
+        positive_high_output = node_helpers.conditioning_set_values(
+            positive_high_input, {"minimax_keyframes": scaler_keyframes})
+        return io.NodeOutput(positive_low_output, positive_high_output, crop_images)
     
     
 NODE_CLASS_MAPPINGS = {
