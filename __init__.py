@@ -23,6 +23,8 @@ from .Logic import NODE_REGISTRY as _Logic
 from .ImageResolution import NODE_REGISTRY as _ImageResolution
 from .H3ReferenceToVideo import NODE_REGISTRY as _H3ReferenceToVideo
 from .H3DurationLength import NODE_REGISTRY as _H3DurationLength
+from .H3AudioUpload import NODE_REGISTRY as _H3AudioUpload
+from .H3MediaLoader import NODE_REGISTRY as _H3MediaLoader
 
 # 注册所有各导入的节点 classes
 _register_nodes_classes(
@@ -38,7 +40,18 @@ _register_nodes_classes(
     _ImageResolution,
     _H3ReferenceToVideo,
     _H3DurationLength,
+    _H3AudioUpload,
+    _H3MediaLoader,
 )
 
+# 导出静态资源目录以加载前端 JS 插件
+__version__ = "1.0.0"
+WEB_DIRECTORY = "./web/js"
+
 # 导出最终的节点变量（必须）
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+__all__ = [
+    "NODE_CLASS_MAPPINGS", 
+    "NODE_DISPLAY_NAME_MAPPINGS", 
+    "WEB_DIRECTORY",
+    "__version__",
+    ]

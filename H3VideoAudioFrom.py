@@ -294,10 +294,10 @@ class H3VideoAudioFrom:
             if gradient_frame_count > 0:
                 # 关闭线性模式时，每一帧使用相同的最小噪声强度。
                 # sampling_noise_strength = 0.4
-                noise_center = 0.4 # 中间
+                noise_center = 0.50 # 中间
                 # 邻近拼接点的起始帧
                 # 如果加噪, 拼接处可能有未去除的噪点, 暂定 = 0 不加噪
-                noise_near = 0.0  
+                noise_near = 0.00  
                 if from_end:
                     # [首0.1][...noise_center...][尾0.2]
                     sampling_noise_strength = torch.cat([
@@ -339,16 +339,13 @@ class H3VideoAudioFrom:
             if strength_count > 0:
                 noise_strength = 0.05 # 不能是 0，否则后续K采样有亮度差（0.5）
                 # middle_index
-                middle_index = strength_count // 2
-                sampling_noise_strength[middle_index] = noise_strength
-                # next_middle_index
-                next_middle_index = middle_index + 1
-                if next_middle_index < strength_count:
-                    sampling_noise_strength[next_middle_index] = noise_strength
-                next_middle_index = next_middle_index + 1
-                if next_middle_index < strength_count:
-                    sampling_noise_strength[next_middle_index] = noise_strength
-                # 后面不能再加了，要至少留 6 张纯噪，否则接缝处会有噪点
+                middle_index = int( strength_count // 2 )
+                if from_end:
+                    # 从 1 到 middle_index（不包含开始第一个）
+                    sampling_noise_strength[:middle_index + 1] = noise_strength
+                else:
+                    # 从 middle_index 到倒数第二个元素（不包含最后一个）
+                    sampling_noise_strength[middle_index:-1] = noise_strength
 
             noise_exclude_index = None
             if _image_count(ref_image) > 0:
@@ -393,7 +390,10 @@ class H3VideoAudioFrom:
         # last_frame 尾帧: 返回负值（片尾-count）,例如: -22
         idx_mode_first = str(idx_mode).strip().lower() == "first_frame"
         frame_idx = 0 if idx_mode_first else -count
-        return (out_images, out_audio, count, frame_idx)
+        # 多裁掉几帧 ?
+        cut_count = count
+        # cut_count = max(0, cut_count + 5)
+        return (out_images, out_audio, cut_count, frame_idx)
 
 
 NODE_CLASS_MAPPINGS = {

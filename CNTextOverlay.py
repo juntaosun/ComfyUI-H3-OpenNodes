@@ -25,7 +25,7 @@ class CNTextOverlay:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
     FUNCTION = "add_text"
-    CATEGORY = "PainterNodes"
+    CATEGORY = "H3Nodes"
 
     def _parse_color(self, color_str):
         color_str = str(color_str).strip().lower()
