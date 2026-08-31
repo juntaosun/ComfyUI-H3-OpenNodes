@@ -297,13 +297,6 @@ def _build_subject_definitions(items):
     # 根据顺序组合
     lines = subject_lines + audio_lines
     
-    # 添加说明信息
-    lines.append(
-        "\n"
-        "summary:\n"
-        "[reference generation + reference generation]"
-    )
-    
     return "\n".join(lines), role_names_map, 
 
 
@@ -393,6 +386,15 @@ class H3MediaToVideo(io.ComfyNode):
         # overall_soundscape: (可自动追加)
         # non_diegetic_music: (可自动追加) 
         # --------------------------------------------------------------
+        
+        # 若用户没有输入 summary: 则自动追加说明信息:
+        if "summary:".lower() not in prompt.lower():
+            summary = "\n"
+            summary += "summary:\n"
+            summary += "[reference generation + reference generation]\n"
+            # summary += "手持镜头\n"
+            prompt = f"{summary}{prompt}"
+        
         
         # 若用户没有输入 integrated_multimodal_description 或 detailed_description 则自动追加:
         if ("detailed_description".lower() not in prompt.lower()) and \
