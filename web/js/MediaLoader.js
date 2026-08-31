@@ -19,19 +19,22 @@ const PROP_AUDIO_MUTED = "pml_audio_muted";
 /* ----------------------------- 布局 ----------------------------- */
 const NODE_WIDTH = 480;
 const IMAGE_H = 148;
-const WAVEFORM_H = 84;
-const CTRLROW_H = 32;
-const GAP = 10;
-const PAD_X = 10;
-const PAD_Y = 8;
+const WAVEFORM_H = 75;
+const CTRLROW_H = 16;
+const GAP = 6;
+const AUDIO_GAP = 2;
+const AUDIO_PADDING = 6;
+const PAD_X = 2;
+const PAD_Y = 2;
 const CHROME = 92;
-const AUDIO_BLOCK_H = WAVEFORM_H + CTRLROW_H + GAP + PAD_Y * 2;
-const CONTENT_H = IMAGE_H + GAP + AUDIO_BLOCK_H + PAD_Y;
-const TEXT_WIDGET_MIN_H = 80;
+const AUDIO_BLOCK_H = WAVEFORM_H + CTRLROW_H + AUDIO_GAP + AUDIO_PADDING * 2 + 8;
+const CONTENT_H = IMAGE_H + GAP  + AUDIO_BLOCK_H + PAD_Y ;
+const TEXT_WIDGET_MIN_H = 70;
 const TEXT_BOTTOM_GAP = 10;
 const TEXT_NODE_BOTTOM_MARGIN = 8;
 const TEXT_HEIGHT_OFFSET = 30;
-const DEFAULT_HEIGHT = CONTENT_H + CHROME + TEXT_WIDGET_MIN_H + TEXT_BOTTOM_GAP + TEXT_NODE_BOTTOM_MARGIN;
+const ROLE_NAME_TOP_GAP = 14;
+const DEFAULT_HEIGHT = CONTENT_H + CHROME + ROLE_NAME_TOP_GAP + TEXT_WIDGET_MIN_H + TEXT_BOTTOM_GAP + TEXT_NODE_BOTTOM_MARGIN + 50;
 const MIN_WIDTH = 340;
 const MIN_HEIGHT = DEFAULT_HEIGHT;
 const SIZE_SANITY_MAX = 4096;
@@ -42,7 +45,8 @@ const REQUIRED_WIDGET_INDEX = {
     trim_start: 2,
     trim_end: 3,
     audio_muted: 4,
-    prompt: 5,
+    role_name: 5,
+    prompt: 6,
 };
 
 /* ----------------------------- 颜色 ----------------------------- */
@@ -69,9 +73,9 @@ const C = {
 };
 
 const SVG = {
-    upload: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+    upload: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
     image: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
-    mic: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>`,
+    mic: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>`,
     play: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>`,
     pause: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
     restore: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`,
@@ -254,7 +258,7 @@ function getPromptHeight(node) {
     if (!Number.isFinite(nodeHeight)) return TEXT_WIDGET_MIN_H;
     return Math.max(
         TEXT_WIDGET_MIN_H,
-        nodeHeight - CHROME - CONTENT_H - TEXT_BOTTOM_GAP - TEXT_NODE_BOTTOM_MARGIN - TEXT_HEIGHT_OFFSET,
+        nodeHeight - CHROME - CONTENT_H - ROLE_NAME_TOP_GAP - TEXT_BOTTOM_GAP * 2 - TEXT_NODE_BOTTOM_MARGIN * 2 - TEXT_HEIGHT_OFFSET,
     );
 }
 
@@ -299,6 +303,7 @@ function styleNativeTextWidget(node) {
         el.style.outline = "none";
         el.style.boxShadow = "none";
         el.style.background = "rgba(8, 12, 20, 0.35)";
+        el.style.borderRadius = `8px`;
         if (!el.dataset.pmlFocusBound) {
             el.dataset.pmlFocusBound = "1";
             el.addEventListener("focus", () => {
@@ -393,15 +398,21 @@ function hookImageCombo(node) {
     };
 }
 
-/** 把自定义 UI 插到文本控件之前。 */
+/** 将自定义图像/音频 UI、role_name 和 prompt 排列到正确的显示顺序。 */
 function insertUiBeforeText(node, widget) {
     if (!node.widgets || !widget) return;
-    const idx = node.widgets.indexOf(widget);
-    const textIdx = node.widgets.findIndex((x) => x && x.name === "prompt");
-    if (idx < 0 || textIdx < 0 || idx === textIdx) return;
-    node.widgets.splice(idx, 1);
-    const newTextIdx = node.widgets.findIndex((x) => x && x.name === "prompt");
-    node.widgets.splice(newTextIdx < 0 ? node.widgets.length : newTextIdx, 0, widget);
+    const removeByName = (name) => {
+        const index = node.widgets.findIndex((item) => item && item.name === name);
+        if (index < 0) return null;
+        return node.widgets.splice(index, 1)[0];
+    };
+
+    removeByName(widget.name);
+    const roleNameWidget = removeByName("role_name");
+    const promptWidget = removeByName("prompt");
+    node.widgets.push(widget);
+    if (roleNameWidget) node.widgets.push(roleNameWidget);
+    if (promptWidget) node.widgets.push(promptWidget);
 }
 
 /** 构建图像预览与音频波形的 DOM 控件。 */
@@ -440,7 +451,7 @@ function buildUI(node) {
     });
     if (uiWidget) {
         uiWidget.computeSize = function (width) {
-            return [width || NODE_WIDTH, CONTENT_H];
+            return [width || NODE_WIDTH, CONTENT_H + ROLE_NAME_TOP_GAP];
         };
         insertUiBeforeText(node, uiWidget);
     }
@@ -454,11 +465,15 @@ function buildUI(node) {
         position: relative;
         display: flex;
         flex-direction: column;
-        gap: ${GAP}px;
+        gap: ${AUDIO_GAP}px;
         flex: 0 0 auto;
         min-height: ${AUDIO_BLOCK_H}px;
         box-sizing: border-box;
+        padding: ${AUDIO_PADDING}px;
+        border: 1px solid ${C.panelBorder};
         border-radius: 8px;
+        background: rgba(24, 24, 24, 0.62);
+        overflow: hidden;
         transition: background 0.12s, outline-color 0.12s, box-shadow 0.12s;
     `;
     const audioBody = document.createElement("div");
@@ -467,8 +482,8 @@ function buildUI(node) {
     const audioClearBtn = mkIconBtn(SVG.close, "Clear audio", C.textMuted);
     audioClearBtn.style.cssText += `
         position: absolute;
-        top: 6px;
-        right: 6px;
+        top: 8px;
+        right: 8px;
         display: none;
         background: rgba(0,0,0,0.45);
         z-index: 3;
@@ -536,7 +551,7 @@ function buildImageSection(node) {
     `;
     empty.innerHTML = SVG.image;
     const emptyLabel = document.createElement("div");
-    emptyLabel.textContent = "Drop image / use dropdown above";
+    emptyLabel.textContent = "拖入参考图像 / Drop upload audio";
     emptyLabel.style.cssText = "font-size: 11px;";
     empty.appendChild(emptyLabel);
 
@@ -581,13 +596,17 @@ function buildImageSection(node) {
 
     const clearBtn = mkIconBtn(SVG.close, "Clear image", C.textMuted);
     clearBtn.style.cssText += `
-        display: none;
+        display: flex;
+        justify-content: center;
+        align-items: center;
         background: rgba(0,0,0,0.45);
     `;
 
     const zoomBtn = mkIconBtn(SVG.zoom, "View fullscreen", C.textMuted);
     zoomBtn.style.cssText += `
-        display: none;
+        display: flex;
+        justify-content: center;
+        align-items: center;
         background: rgba(0,0,0,0.45);
     `;
     zoomBtn.onclick = (e) => {
@@ -731,28 +750,33 @@ function pillStyle() {
         display: flex;
         align-items: center;
         gap: 2px;
-        background: ${C.pill};
-        border: 1px solid ${C.pillBorder};
-        border-radius: 9px;
-        padding: 2px 4px;
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        padding: 0;
         flex: 0 0 auto;
     `;
 }
 
-/** 构造图标按钮基础样式。 */
+/** 构造统一尺寸的音频图标按钮基础样式。 */
 function iconBtnStyle(color) {
     return `
+        width: 18px;
+        height: 18px;
+        min-width: 18px;
+        min-height: 18px;
+        box-sizing: border-box;
         background: transparent;
         border: none;
         cursor: pointer;
         color: ${color};
-        padding: 3px 5px;
+        padding: 0;
         display: flex;
         align-items: center;
         justify-content: center;
         border-radius: 6px;
         transition: background 0.15s, color 0.15s;
-        flex: 0 0 auto;
+        flex: 0 0 28px;
     `;
 }
 
@@ -776,10 +800,11 @@ function buildControlsRow(node) {
         align-items: center;
         justify-content: center;
         flex-wrap: nowrap;
+        margin-top: 4px;
         gap: 8px;
         width: 100%;
         height: ${CTRLROW_H}px;
-        padding: 0 2px;
+        padding: 2px 2px;
         box-sizing: border-box;
         background: transparent;
         overflow: hidden;
@@ -999,20 +1024,19 @@ function renderEmptyAudio(node) {
     body.style.cssText = `
         display: flex;
         width: 100%;
-        height: ${WAVEFORM_H + 8}px;
-        min-height: ${WAVEFORM_H + 8}px;
+        height: ${WAVEFORM_H}px;
+        min-height: ${WAVEFORM_H}px;
         box-sizing: border-box;
-        background: ${C.panel};
-        outline: 1px dashed ${C.panelBorder};
-        outline-offset: -1px;
-        border-radius: 8px;
+        background: rgba(8, 12, 20, 0.28);
+        border: 1px solid ${C.panelBorder};
+        border-radius: 6px;
         align-items: center;
         justify-content: center;
         color: ${C.textMuted};
         font-size: 11px;
         flex: 0 0 auto;
     `;
-    body.textContent = "Drop / upload audio";
+    body.textContent = "拖入参考音色 / Drop upload audio";
     showFileControlsOnly(node);
     setAudioClearVisible(node, false);
     stopPlayheadLoop(node);
@@ -1211,8 +1235,8 @@ function renderLoadedAudio(node) {
         background: transparent;
         flex: 0 0 auto;
         min-height: ${WAVEFORM_H}px;
-        height: ${WAVEFORM_H + 8}px;
-        max-height: ${WAVEFORM_H + 8}px;
+        height: ${WAVEFORM_H}px;
+        max-height: ${WAVEFORM_H}px;
     `;
 
     const wfContainer = document.createElement("div");
@@ -1222,10 +1246,10 @@ function renderLoadedAudio(node) {
         min-height: ${WAVEFORM_H}px;
         width: 100%;
         box-sizing: border-box;
-        background: rgba(255,255,255,0.045);
-        outline: 1px solid rgba(255,255,255,0.06);
-        outline-offset: -1px;
-        border-radius: 8px;
+        background: rgba(8, 12, 20, 0.28);
+        border: 1px solid ${C.panelBorder};
+        outline: none;
+        border-radius: 6px;
         overflow: hidden;
         cursor: crosshair;
         touch-action: none;
@@ -1239,8 +1263,8 @@ function renderLoadedAudio(node) {
     filenameLabel.title = filenameLabel.textContent;
     filenameLabel.style.cssText = `
         position: absolute;
-        left: 8px;
-        bottom: 8px;
+        left: 0;
+        top: 0;
         max-width: calc(100% - 16px);
         width: fit-content;
         box-sizing: border-box;

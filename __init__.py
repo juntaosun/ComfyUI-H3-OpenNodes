@@ -25,6 +25,7 @@ from .H3ReferenceToVideo import NODE_REGISTRY as _H3ReferenceToVideo
 from .H3DurationLength import NODE_REGISTRY as _H3DurationLength
 from .H3AudioUpload import NODE_REGISTRY as _H3AudioUpload
 from .H3MediaLoader import NODE_REGISTRY as _H3MediaLoader
+from .H3MediaToVideo import NODE_REGISTRY as _H3MediaToVideo
 
 # 注册所有各导入的节点 classes
 _register_nodes_classes(
@@ -42,6 +43,7 @@ _register_nodes_classes(
     _H3DurationLength,
     _H3AudioUpload,
     _H3MediaLoader,
+    _H3MediaToVideo,
 )
 
 # 导出静态资源目录以加载前端 JS 插件

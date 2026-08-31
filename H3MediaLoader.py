@@ -99,6 +99,16 @@ def _normalize_text(text):
     return text if text != "" else None
 
 
+def _normalize_role_name(role_name):
+    """归一化角色名称，空白名称返回 None，非空名称去除首尾空白。"""
+    if role_name is None:
+        return None
+    if not isinstance(role_name, str):
+        role_name = str(role_name)
+    role_name = role_name.strip()
+    return role_name if role_name else None
+
+
 def _load_image_tensor(file_path):
     """按 LoadImage 方式读取图像，返回 [B, H, W, C] float32 张量。"""
     img = Image.open(file_path)
@@ -234,11 +244,16 @@ class H3MediaLoader:
                     "default": False,
                     "tooltip": "静音时不输出 audio。",
                 }),
+                "role_name": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "tooltip": "角色名称，可为空。",
+                }),
                 "prompt": ("STRING", {
                     "default": "",
                     "multiline": True,
                     "dynamicPrompts": True,
-                    "tooltip": "媒体描述 prompt，可为空。",
+                    "tooltip": "角色提示说明，可为空。",
                 }),
             },
         }
@@ -260,9 +275,10 @@ class H3MediaLoader:
         trim_start=0.0,
         trim_end=-1.0,
         audio_muted=False,
+        role_name="",
         prompt="",
     ):
-        """加载可选的图像、音频与 prompt，同时返回 media 与独立输出。"""
+        """加载可选的图像、音频、角色名称与 prompt，同时返回 media 与独立输出。"""
         image = None
         audio = None
 
@@ -292,10 +308,12 @@ class H3MediaLoader:
                 )
             audio = _load_audio_dict(audio_path, trim_start, trim_end)
 
+        normalized_role_name = _normalize_role_name(role_name)
         normalized_prompt = _normalize_text(prompt)
         media = {
             "image": image,
             "audio": audio,
+            "role_name": normalized_role_name,
             "prompt": normalized_prompt,
         }
         # STRING 输出用空串代替 None，便于直接接入文本类节点。
@@ -310,9 +328,10 @@ class H3MediaLoader:
         trim_start=0.0,
         trim_end=-1.0,
         audio_muted=False,
+        role_name="",
         prompt="",
     ):
-        """根据文件签名、裁剪、静音与 prompt 内容判断是否需要重新执行。"""
+        """根据文件签名、裁剪、静音、角色名称与 prompt 内容判断是否需要重新执行。"""
         image_path = _resolve_input_path(image_filename)
         audio_path = _resolve_input_path(audio_filename)
         return "|".join([
@@ -321,6 +340,7 @@ class H3MediaLoader:
             str(trim_start),
             str(trim_end),
             str(bool(audio_muted)),
+            role_name or "",
             prompt or "",
         ])
 
