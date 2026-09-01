@@ -8,6 +8,12 @@
 </div>
 
 --- 
+### ✨ 最简单的使用场景 (The simplest use case):  
+👉 当你定义了一个角色卡包括图像和声音,比如角色的名称叫:露西.
+那么你的提示词只需要写露西在做什么,例如:露西开心的说:"你好",
+该节点会自动绑定并关联到该角色卡和声音克隆.
+
+👉 Once you define a character card that includes an image and a voice, such as a character named Lucy, then your prompt only needs to describe what Lucy is doing, for example: Lucy happily says, "Hello." The node will automatically bind and associate with that character card and voice clone.
 
 > 👉 示例工作流 (Example workflow):  ComfyUI-H3-OpenNodes\workflows\
 
