@@ -1,13 +1,13 @@
 import { app } from "../../../scripts/app.js";
 
-/* H3MediaToVideo 单端口多连线：虚拟连线保存在节点属性，执行时注入隐藏输入。 */
-const NODE_CLASS = "H3MediaToVideo";
+/* H3MediaPrompt 单端口多连线：虚拟连线保存在节点属性，执行时注入隐藏输入。 */
+const NODE_CLASS = "H3MediaPrompt";
 const MEDIA_INPUT = "medias";
 const BACKING_RE = /^media_[1-9]$/;
 const MAX_MEDIA = 9;
-const LINKS_PROPERTY = "h3_media_to_video_links";
+const LINKS_PROPERTY = "h3_media_to_prompt_links";
 
-/** 返回 H3MediaToVideo 的虚拟媒体连接记录。 */
+/** 返回 H3MediaPrompt 的虚拟媒体连接记录。 */
 function getLinks(node) {
     node.properties ||= {};
     if (!Array.isArray(node.properties[LINKS_PROPERTY])) node.properties[LINKS_PROPERTY] = [];
@@ -255,8 +255,8 @@ function isConnectingMedia(canvas) {
 /** 覆盖画布连接层，补绘虚拟连接并恢复其菜单交互。 */
 function patchCanvas() {
     const canvas = app.canvas;
-    if (!canvas || canvas.__h3MediaToVideoPatched || typeof canvas.drawConnections !== "function") return;
-    canvas.__h3MediaToVideoPatched = true;
+    if (!canvas || canvas.__H3MediaPromptPatched || typeof canvas.drawConnections !== "function") return;
+    canvas.__H3MediaPromptPatched = true;
     const originalDraw = canvas.drawConnections;
     canvas.drawConnections = function (ctx) {
         const result = originalDraw.apply(this, arguments);
@@ -290,10 +290,11 @@ function patchCanvas() {
     canvas.canvas?.addEventListener?.("pointerdown", linkPointerHandler, true);
 }
 
+
 /** 在 graphToPrompt 阶段把虚拟连接转换为后端隐藏输入。 */
 function patchGraphToPrompt() {
-    if (app.__h3MediaToVideoPromptPatched || typeof app.graphToPrompt !== "function") return;
-    app.__h3MediaToVideoPromptPatched = true;
+    if (app.__H3MediaPromptPromptPatched || typeof app.graphToPrompt !== "function") return;
+    app.__H3MediaPromptPromptPatched = true;
     const original = app.graphToPrompt;
     app.graphToPrompt = async function () {
         const output = await original.apply(this, arguments);
@@ -314,9 +315,9 @@ function patchGraphToPrompt() {
 
 /** 安装节点生命周期钩子，保证单端口连接可重复接入。 */
 function installNode(nodeType, nodeData) {
-    if (nodeData?.name !== NODE_CLASS || nodeType.prototype.__h3MediaToVideoInstalled) return;
+    if (nodeData?.name !== NODE_CLASS || nodeType.prototype.__H3MediaPromptInstalled) return;
     trimNodeDefinition(nodeData);
-    nodeType.prototype.__h3MediaToVideoInstalled = true;
+    nodeType.prototype.__H3MediaPromptInstalled = true;
     const originalCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
         const result = originalCreated?.apply(this, arguments);
@@ -349,12 +350,12 @@ function installNode(nodeType, nodeData) {
 
 /** 注册扩展并在 ComfyUI 画布初始化后安装补丁。 */
 app.registerExtension({
-    name: "H3.MediaToVideo",
+    name: "H3.MediaPrompt",
     setup() {
         const installPatches = (attempt = 0) => {
             patchGraphToPrompt();
             patchCanvas();
-            if (attempt < 8 && (!app.__h3MediaToVideoPromptPatched || !app.canvas?.__h3MediaToVideoPatched)) {
+            if (attempt < 8 && (!app.__H3MediaPromptPromptPatched || !app.canvas?.__H3MediaPromptPatched)) {
                 setTimeout(() => installPatches(attempt + 1), 250);
             }
         };

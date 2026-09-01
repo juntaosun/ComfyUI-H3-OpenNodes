@@ -311,6 +311,7 @@ class H3MediaLoader:
         normalized_role_name = _normalize_role_name(role_name)
         normalized_prompt = _normalize_text(prompt)
         media = {
+            "type": "H3_MEDIA",
             "image": image,
             "audio": audio,
             "role_name": normalized_role_name,

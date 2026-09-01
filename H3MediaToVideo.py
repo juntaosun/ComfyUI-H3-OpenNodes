@@ -199,34 +199,85 @@ def _encode_positive(clip, vae, audio_vae, prompt, width, height, frame_count,
     return cond
 
 
-def _collect_medias(medias=None, media_slots=None):
-    """按输入顺序收集参考图、参考音频及其完整媒体组。"""
+def _normalize_media_input(value):
+    """将 IMAGE Tensor 包装为标准 H3_MEDIA，并保留已有媒体对象。"""
+    if isinstance(value, dict) and any(
+            key in value for key in ("type", "image", "audio", "role_name", "prompt")):
+        return value
+    if isinstance(value, torch.Tensor):
+        if len(value.shape) != 4 or value.shape[-1] not in (1, 3, 4):
+            raise TypeError(
+                "H3MediaPrompt: IMAGE input must be a [B, H, W, C] Tensor "
+                "with 1, 3, or 4 channels"
+            )
+        return {
+            "type": "IMAGE",
+            "image": value,
+            "audio": None,
+            "role_name": None,
+            "prompt": None,
+        }
+    raise TypeError("H3MediaPrompt: media input must be an H3_MEDIA object or IMAGE Tensor")
+
+
+def _build_medias_passthrough(medias=None, media_slots=None):
+    """稳定排序并透传媒体对象，将裸 IMAGE 包装后排列在 H3_MEDIA 末尾。"""
+    h3_media_values = []
+    image_media_values = []
+
+    def append_media_values(value):
+        """递归展开媒体集合，并按原始输入类型分别收集媒体。"""
+        if value is None:
+            return
+        if isinstance(value, dict) and any(
+                key in value for key in ("type", "image", "audio", "role_name", "prompt")):
+            h3_media_values.append(value)
+        elif isinstance(value, dict):
+            for nested_value in value.values():
+                append_media_values(nested_value)
+        elif isinstance(value, (list, tuple)):
+            for nested_value in value:
+                append_media_values(nested_value)
+        else:
+            image_media_values.append(_normalize_media_input(value))
+
+    append_media_values(medias)
+    for index in range(1, 10):
+        append_media_values((media_slots or {}).get(f"media_{index}"))
+
+    media_values = h3_media_values + image_media_values
+    if not media_values:
+        return None
+    if len(media_values) == 1:
+        return media_values[0]
+    return {
+        f"media_{index}": media
+        for index, media in enumerate(media_values, start=1)
+    }
+
+
+def _collect_medias(medias=None):
+    """从已排序并标准化的透传结果中收集参考素材与媒体组。"""
     ref_images = {}
     ref_audios = {}
     items = []
-    media_values = []
-    if medias is not None:
-        if isinstance(medias, dict) and any(
-                key in medias for key in ("image", "audio", "role_name", "prompt")):
-            media_values.append(medias)
-        elif isinstance(medias, dict):
-            media_values.extend(medias.values())
-        elif isinstance(medias, (list, tuple)):
-            media_values.extend(medias)
-        else:
-            media_values.append(medias)
 
-    for index in range(1, 10):
-        media = (media_slots or {}).get(f"media_{index}")
-        if media is not None:
-            media_values.append(media)
+    if medias is None:
+        media_values = []
+    elif isinstance(medias, dict) and any(
+            key in medias for key in ("type", "image", "audio", "role_name", "prompt")):
+        media_values = [medias]
+    elif isinstance(medias, dict):
+        media_values = list(medias.values())
+    else:
+        raise TypeError("H3MediaPrompt: preprocessed medias must be an H3_MEDIA object or mapping")
 
     for index, media in enumerate(media_values, start=1):
-        if media is None:
-            continue
-        if not isinstance(media, dict):
-            raise TypeError("H3MediaToVideo: each media input must be an H3_MEDIA object or None")
+        if not isinstance(media, dict) or not any(
+                key in media for key in ("image", "audio", "role_name", "prompt")):
+            raise TypeError("H3MediaPrompt: each preprocessed media must be an H3_MEDIA object")
         item = {
+            "type": media.get("type"),
             "image": media.get("image"),
             "audio": media.get("audio"),
             "role_name": media.get("role_name"),
@@ -239,66 +290,6 @@ def _collect_medias(medias=None, media_slots=None):
             ref_audios[f"media_audio_{index}"] = item["audio"]
 
     return ref_images, ref_audios, items
-
-
-def _build_subject_definitions(items):
-    """按媒体组实际输入顺序拼接角色主体定义文本。
-    """
-    audio_lines = []
-    # 索引计数器
-    subject_index = 0
-    audio_index = 0
-    # 需要收集角色名称对应的Subject,用于后续处理
-    role_names_map = {}
-    # 每个组里的 图像 和 音频 都会按顺序上传到模型参考中 ref_images, ref_audios
-    subject_lines = []
-    # 所以,它们的索引计数序号需要分别从 1 开始
-    for item in items or []:
-        
-        # image 需要从 1 开始, 按上传顺序
-        has_image = False
-        if item.get("image") is not None:
-            has_image = True
-            subject_index += 1 # 正常计数
-            subject_tag = f"<Subject {subject_index}>(S{subject_index})"
-            subject_parts = [
-                value for value in (item.get("role_name"), item.get("prompt"))
-                if value is not None and str(value) != ""
-            ]
-            subject_text = " - ".join(str(value) for value in subject_parts)
-            subject_lines.append(f"{subject_tag}: {subject_text}")
-            
-            # 把 role_name 关联 subject_tag
-            role_name = item.get("role_name")
-            if role_name  is not None and str(role_name).strip() != "":
-                role_name = role_name.strip()
-                role_names_map[role_name] = subject_tag
-            
-        # audio 需要从 1 开始, 按上传顺序
-        if item.get("audio") is not None:
-            audio_index += 1 # 正常计数
-            # 但前提需要有图像, 才需要拼这个提示词
-            if has_image:
-                # 有角色参考时, 让音频是说话人音色参考
-                audio_lines.append(
-                    f"<Audio {audio_index}> 是 {subject_tag} 的说话音色风格参考,"
-                    "不复制原始音频信号。"
-                )
-            else:
-                # 未提供角色时, 让音频参考其节奏或节拍, 当音乐用.
-                audio_lines.append(
-                    f"<Audio {audio_index}> 参考节拍、节奏、音乐风格或声音连续性。"
-                )
-    
-    # 若有则标签头
-    if len(subject_lines) > 0:
-        subject_lines.insert(0, "subject_definitions:")              
-    
-    # 根据顺序组合
-    lines = subject_lines + audio_lines
-    
-    return "\n".join(lines), role_names_map, 
-
 
 
 
@@ -369,89 +360,14 @@ class H3MediaToVideo(io.ComfyNode):
             "media_1", "media_2", "media_3", "media_4", "media_5",
             "media_6", "media_7", "media_8", "media_9")}
         
-        # 收集多参素材
-        ref_images, ref_audios, items = _collect_medias(medias, media_slots)
-        # 生成多参提示
-        subject_definitions, role_names_map = _build_subject_definitions(items)
+        # 标准化媒体并稳定排序：H3_MEDIA 在前，裸 IMAGE 包装后排列在末尾。
+        passthrough_medias = _build_medias_passthrough(medias, media_slots)
+        # 直接从已处理的透传结果中收集多参素材，避免重复标准化和排序。
+        ref_images, ref_audios, items = _collect_medias(passthrough_medias)
         
-        # --------------------------------------------------------------
-        # minimax h3 的提示词, 采用 6 段式结构, 这里只用到 5 段足够;
-        # --------------------------------------------------------------
-        # 以下 2 段由输入参考素材(图像/音频)得到:
-        # subject_definitions:
-        # summary:
-        # --------------------------------------------------------------
-        # 以下 3 段由 prompt 用户输入文本提示获取:
-        # integrated_multimodal_description: (必需 * ) 
-        # overall_soundscape: (可自动追加)
-        # non_diegetic_music: (可自动追加) 
-        # --------------------------------------------------------------
-        
-        # 若用户没有输入 summary: 则自动追加说明信息:
-        if "summary:".lower() not in prompt.lower():
-            summary = "\n"
-            summary += "summary:\n"
-            summary += "[reference generation + reference generation]\n"
-            # summary += "手持镜头\n"
-            prompt = f"{summary}{prompt}"
-        
-        
-        # 若用户没有输入 integrated_multimodal_description 或 detailed_description 则自动追加:
-        if ("detailed_description".lower() not in prompt.lower()) and \
-            ("integrated_multimodal_description".lower() not in prompt.lower()):
-            # 两种标签二选一, 多参建议选择 detailed_description 标签
-            prompt = f"\ndetailed_description:\n{prompt}" # 用于多参模式 (必需 * )
-            # prompt = f"\nintegrated_multimodal_description:\n{prompt}" # 用于T2V模式 (必需 * )
-        
+        # 提示词处理功能由 H3MediaPrompt 负责
         # 将用户输入的对话, 替换为 H3 的规则 <d>[Chinese] ...</d> 标签。
         prompt = PromptPeplace.replace_prompt_dialogues(prompt)
-        
-        # 将角色名称加上对应的 subject_tag 关联参考图素材ID和音频ID
-        # 比如: 小华 --> 小华<Subject 1>(S1)
-        for role_name in role_names_map:
-            subject_tag = role_names_map.get(role_name)
-            # print(f"角色: {role_name} {subject_tag}")
-            if subject_tag is not None:
-                prompt = prompt.replace(role_name, f"{role_name}{subject_tag}")
-        
-        # 核心提示词输入
-        prompt = f"{subject_definitions}\n{prompt}\n"
-        
-        # 若用户没有输入 overall_soundscape 则自动追加:
-        if "overall_soundscape".lower() not in prompt.lower():
-            prompt += "\n"
-            prompt += "overall_soundscape:\n"
-            prompt += "N/A\n"
-            
-        # 若用户没有输入 non_diegetic_music 则自动追加:
-        if "non_diegetic_music".lower() not in prompt.lower():
-            prompt += "\n"
-            prompt += "non_diegetic_music:\n"
-            prompt += "N/A\n"
-            
-        
-        # -------------------------------------------------------------
-        # 处理完成的最终 prompt 提示词示例, 符合 5 段时结构:
-        # -------------------------------------------------------------
-        # subject_definitions:
-        # <Subject 1>(S1): 小美 - 她是一个女人
-        # <Subject 2>(S2): 小华 - 她是一个男人
-        # <Audio 1> 是 <Subject 1>(S1) 的说话音色风格参考,不复制原始音频信号。
-        # <Audio 2> 是 <Subject 2>(S2) 的说话音色风格参考,不复制原始音频信号。
-
-        # summary:
-        # [reference generation + reference generation]
-        # 第一人称手持镜头
-
-        # detailed_description:
-        # 小华<Subject 2>(S2)正在跑,她对着镜头说:<d>[Chinese] 你是谁啊</d>,小美<Subject 1>(S1)生气,转头就走
-
-        # overall_soundscape:
-        # N/A
-
-        # non_diegetic_music:
-        # N/A
-        # -------------------------------------------------------------
         
         
         # 音频不受尺寸影响，两路共享缓存，避免重复编码
