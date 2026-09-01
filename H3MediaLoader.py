@@ -34,14 +34,18 @@ def _is_empty_name(name):
 
 
 def _list_input_images():
-    """列出 input 目录中的图像文件，供 LoadImage 风格下拉使用。"""
+    """递归列出 input 目录中的图像文件，返回可用于下拉的相对路径。"""
     names = [IMAGE_NONE]
     try:
         input_dir = folder_paths.get_input_directory()
-        files = [
-            f for f in os.listdir(input_dir)
-            if os.path.isfile(os.path.join(input_dir, f))
-        ]
+        files = []
+        for root, _, filenames in os.walk(input_dir):
+            for filename in filenames:
+                file_path = os.path.join(root, filename)
+                if not os.path.isfile(file_path):
+                    continue
+                relative_path = os.path.relpath(file_path, input_dir)
+                files.append(relative_path.replace(os.sep, "/"))
         if hasattr(folder_paths, "filter_files_content_types"):
             files = folder_paths.filter_files_content_types(files, ["image"])
         else:
@@ -225,7 +229,7 @@ class H3MediaLoader:
                 "image_filename": (_list_input_images(), {
                     "image_upload": True,
                     "default": IMAGE_NONE,
-                    "tooltip": "从 input 目录选择图像，可为空。",
+                    "tooltip": "从 input 目录选择或上传图像，可为空。",
                 }),
                 "audio_filename": ("STRING", {"default": ""}),
                 "trim_start": ("FLOAT", {

@@ -298,14 +298,19 @@ function patchGraphToPrompt() {
     const original = app.graphToPrompt;
     app.graphToPrompt = async function () {
         const output = await original.apply(this, arguments);
+        const prompt = output?.output || output || {};
         for (const node of app.graph?._nodes || []) {
             if (node?.comfyClass !== NODE_CLASS && node?.type !== NODE_CLASS) continue;
-            const promptNode = output?.output?.[String(node.id)] || output?.[String(node.id)];
+            const promptNode = prompt[String(node.id)];
             if (!promptNode) continue;
             promptNode.inputs ||= {};
             for (let index = 1; index <= MAX_MEDIA; index += 1) delete promptNode.inputs[`media_${index}`];
-            for (const [index, link] of normalizeLinks(node).entries()) {
-                promptNode.inputs[`media_${index + 1}`] = [String(link.source_id), Number(link.source_slot)];
+            let mediaIndex = 1;
+            for (const link of normalizeLinks(node)) {
+                // 被忽略的上游节点不会出现在最终 prompt 中，不能继续作为后端连接提交。
+                if (!Object.prototype.hasOwnProperty.call(prompt, String(link.source_id))) continue;
+                promptNode.inputs[`media_${mediaIndex}`] = [String(link.source_id), Number(link.source_slot)];
+                mediaIndex += 1;
             }
             delete promptNode.inputs.medias;
         }
