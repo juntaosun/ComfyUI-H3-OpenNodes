@@ -1124,14 +1124,19 @@ async function uploadToInput(file, filename) {
     return sub ? `${sub}/${name}` : name;
 }
 
-/** 构造 /view 预览地址。 */
+/** 构造 /view 预览地址，并将子目录作为独立参数传递。 */
 function viewUrl(filename) {
-    return (
-        "/view?filename=" +
-        encodeURIComponent(filename) +
-        "&type=input&t=" +
-        Date.now()
-    );
+    const normalized = String(filename || "").replace(/\\/g, "/");
+    const separator = normalized.lastIndexOf("/");
+    const subfolder = separator >= 0 ? normalized.slice(0, separator) : "";
+    const name = separator >= 0 ? normalized.slice(separator + 1) : normalized;
+    const params = new URLSearchParams({
+        filename: name,
+        type: "input",
+        t: String(Date.now()),
+    });
+    if (subfolder) params.set("subfolder", subfolder);
+    return "/view?" + params.toString();
 }
 
 /** 按名称或兜底索引写入控件值。 */
