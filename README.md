@@ -13,7 +13,7 @@
 那么你的提示词只需要写露西在做什么,例如:露西开心的说:"你好",  
 该节点会自动绑定并关联到该角色卡和声音克隆.  
 
-> 所以, 你不需要说图片1,图片2, 应该直接用角色的名字,比如:露西.  
+> 所以, 你不需要说图片1,图片2, 应该直接用角色的名字 (Name), 比如:露西.  
 
 👉 Once you define a character card that includes an image and a voice, such as a character named Lucy, then your prompt only needs to describe what Lucy is doing,  
 for example: Lucy happily says, "Hello." The node will automatically bind and associate with that character card and voice clone.
