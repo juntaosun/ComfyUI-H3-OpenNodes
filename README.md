@@ -15,7 +15,12 @@
 
 👉 Once you define a character card that includes an image and a voice, such as a character named Lucy, then your prompt only needs to describe what Lucy is doing, for example: Lucy happily says, "Hello." The node will automatically bind and associate with that character card and voice clone.
 
-> 👉 示例工作流 (Example workflow):  ComfyUI-H3-OpenNodes\workflows\
+---  
+### 👉 示例工作流 (Example workflow):  
+
+安装节点 (Installation Node): ComfyUI-H3-OpenNodes  
+
+> ComfyUI-H3-OpenNodes\workflows\
 
 ---
 
