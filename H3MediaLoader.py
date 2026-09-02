@@ -289,28 +289,25 @@ class H3MediaLoader:
         image_name = "" if _is_empty_name(image_filename) else str(image_filename).strip()
         if image_name:
             image_path = _resolve_input_path(image_name)
-            if image_path is None:
-                raise FileNotFoundError(
-                    "H3MediaLoader: image file not found: %s" % image_filename
-                )
-            try:
-                image = _load_image_tensor(image_path)
-            except FileNotFoundError:
-                raise
-            except Exception as exc:
-                raise RuntimeError(
-                    "H3MediaLoader: failed to load image %s: %s"
-                    % (image_path, exc)
-                ) from exc
+            if image_path is not None:
+                try:
+                    image = _load_image_tensor(image_path)
+                except FileNotFoundError:
+                    raise
+                except Exception as exc:
+                    raise RuntimeError(
+                        "H3MediaLoader: failed to load image %s: %s"
+                        % (image_path, exc)
+                    ) from exc
 
         audio_name = (audio_filename or "").strip()
         if audio_name and not bool(audio_muted):
             audio_path = _resolve_input_path(audio_name)
-            if audio_path is None:
-                raise FileNotFoundError(
-                    "H3MediaLoader: audio file not found: %s" % audio_filename
-                )
-            audio = _load_audio_dict(audio_path, trim_start, trim_end)
+            if audio_path is not None:
+                try:
+                    audio = _load_audio_dict(audio_path, trim_start, trim_end)
+                except Exception as exc:
+                    pass
 
         normalized_role_name = _normalize_role_name(role_name)
         normalized_prompt = _normalize_text(prompt)
