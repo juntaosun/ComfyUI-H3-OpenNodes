@@ -26,7 +26,13 @@ The node will automatically bind and associate with that character card and voic
 
 **All-English Prompts:** The prompts can be written entirely in Chinese or any other language, but it is recommended to integrate a skill module downstream to enhance the prompts and convert them into English prompts. This can prevent characters from speaking incoherently or rambling. Qewn 3.8 or any large language model can be used for prompt enhancement.   
 
+<div align="center">
+  <img src='./images/image02.jpg' width="75%" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+</div>
+
 > skills\h3-six-section-context-ir.md  
+支持 OpenAI 协议, 支持本地大模型例如: Ollama, llama.cpp, LM Studio 等自由接入.  
+Supports OpenAI protocols, allowing free access to local large models such as Ollama, llama.cpp, LM Studio, etc.
 
 ---  
 

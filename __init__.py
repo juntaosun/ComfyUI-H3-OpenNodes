@@ -27,6 +27,7 @@ from .H3AudioUpload import NODE_REGISTRY as _H3AudioUpload
 from .H3MediaLoader import NODE_REGISTRY as _H3MediaLoader
 from .H3MediaToVideo import NODE_REGISTRY as _H3MediaToVideo
 from .H3MediaPrompt import NODE_REGISTRY as _H3MediaPrompt
+from .H3PromptEnhance import NODE_REGISTRY as _H3PromptEnhance
 
 # 注册所有各导入的节点 classes
 _register_nodes_classes(
@@ -46,9 +47,10 @@ _register_nodes_classes(
     _H3MediaLoader,
     _H3MediaToVideo,
     _H3MediaPrompt,
+    _H3PromptEnhance,
 )
 
-# 导出静态资源目录以加载前端 JS 插件
+# 导出静态资源目录以加载前端 JS插件
 __version__ = "1.0.0"
 WEB_DIRECTORY = "./web/js"
 
