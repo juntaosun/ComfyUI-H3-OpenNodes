@@ -23,10 +23,10 @@ def _validate_grid(rows, cols, long_side):
 
 
 def _select_even_indices(total, cell_count):
-    """将 total 帧平均分成格子并返回对应帧索引。
+    """按首尾必选、中间均分的规则选出抽帧索引。
 
-    帧数不少于格子数时，按 cell_count 份均分并取每份第一帧。
-    帧数不足时不复用，只返回已有帧的索引，空格由调用方填白色。
+    格子数不少于 2 时，始终包含第 0 帧和最后一帧，其余格子线性均分。
+    帧数不足格子数时不复用，只返回已有帧的索引，空格由调用方填白色。
     """
     total = int(total)
     cell_count = int(cell_count)
@@ -35,7 +35,10 @@ def _select_even_indices(total, cell_count):
     if cell_count <= 0:
         raise ValueError("网格格子数必须大于 0")
     fill_count = min(total, cell_count)
-    return [i * total // fill_count for i in range(fill_count)]
+    if fill_count == 1:
+        return [0]
+    last = total - 1
+    return [i * last // (fill_count - 1) for i in range(fill_count)]
 
 
 def _normalize_frame_size(images):
@@ -141,7 +144,7 @@ class H3ImageToGrid:
             "required": {
                 "images": ("IMAGE", {
                     "tooltip": "视频帧图像批次 [B,H,W,C]。"
-                               "会按 rows*cols 均分成对应份数后各取一帧；"
+                               "按 rows*cols 抽帧：始终取首帧和尾帧，中间线性均分；"
                                "帧数不足时剩余格子填充纯白。"}),
                 "cols": ("INT", {
                     "default": 5, "min": 1, "max": 64, "step": 1,
@@ -160,11 +163,12 @@ class H3ImageToGrid:
     FUNCTION = "to_grid"
     CATEGORY = "H3/image"
     DESCRIPTION = (
-        "Split a variable-length IMAGE batch into rows*cols even segments, "
-        "take the first frame of each segment, tile them left-to-right and "
-        "top-to-bottom, then scale the stitched image so its longest side "
-        "equals long_side. Empty cells are filled with solid white when "
-        "there are fewer frames than grid cells.")
+        "Sample a variable-length IMAGE batch into rows*cols frames, always "
+        "including the first and last frames with evenly spaced frames in "
+        "between, tile them left-to-right and top-to-bottom, then scale the "
+        "stitched image so its longest side equals long_side. Empty cells "
+        "are filled with solid white when there are fewer frames than grid "
+        "cells.")
 
     def to_grid(self, images, cols=5, rows=2, long_side=1536):
         """执行均分抽帧、网格拼接和长边缩放。"""

@@ -21,6 +21,15 @@ The node will automatically bind and associate with that character card and voic
 
 > Therefore, you don’t need to care about Picture 1 and Picture 2, you should directly use the name of the character, for example: Lucy.  
 ---  
+### 👉 角色对白 (character dialogue):  
+**全英文提示词**: 对白可以使用中文编写, 但建议在下游接入 skill 对提示词增强并转换成全英文提示词,这样可以避免乱说话,胡言乱语发生. 可以使用 qewn3.8 或任意大语言模型进行提示词增强.  
+
+**All-English Prompts:** Dialogue can be written in Chinese, but it is recommended to integrate a skill in the downstream system to enhance the prompts and convert them into full English prompts. This can prevent rambling and incoherent speech. Qewn 3.8 or any large language model can be used for prompt enhancement.  
+
+> skills\h3-six-section-context-ir.md  
+
+---  
+
 ### 👉 示例工作流 (Example workflow):  
 
 安装节点 (Installation Node): ComfyUI-H3-OpenNodes  

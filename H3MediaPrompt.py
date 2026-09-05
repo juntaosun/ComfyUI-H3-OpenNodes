@@ -263,8 +263,8 @@ class H3MediaPrompt(io.ComfyNode):
             prompt = f"\ndetailed_description:\n{prompt}" # 用于多参模式 (必需 * )
             # prompt = f"\nintegrated_multimodal_description:\n{prompt}" # 用于T2V模式 (必需 * )
         
-        # 将用户输入的对话, 替换为 H3 的规则 <d>[Chinese] ...</d> 标签。
-        prompt = PromptPeplace.replace_prompt_dialogues(prompt)
+        # 将用户输入的对话, 替换为 H3 的规则 <d>[lang] ...</d> 标签。
+        prompt = PromptPeplace.replace_prompt_dialogues(prompt, lang=None)
         
         # 将角色名称加上对应的 subject_tag 关联参考图素材ID和音频ID
         # 比如: 小华 --> 小华<Subject 1>(S1)
@@ -319,17 +319,18 @@ class H3MediaPrompt(io.ComfyNode):
 import re
 
 class PromptPeplace:
-    """H3 Prompt Replace：将文本中引号内的对话内容转换为 <d>[Chinese] ...</d> 标签。
+    """H3 Prompt Replace：将文本中引号内的对白转换为可选语言标记的 <d> 标签。
 
     规则：
     - 匹配中英文引号内的全部对话内容
-    - 新引号对话替换为 <d>[Chinese] 对话内容</d>
+    - 新引号对话默认替换为 <d>[Chinese] 对话内容</d>
+    - lang 可指定其它语言；为 None、空文本或纯空白时不添加语言标记
     - 引号本身被去掉，其余字符保持不变
     - 任意已存在的 <d>...</d> 标签视为保护块，不再二次包裹
     - 保护块内部的中英引号、嵌套 <d> 与重复语言标记一律清除
     - 语言标记为方括号内任意语言单词，如 [Chinese] / [English] / [Japanese]
-    - 已有标签保留其原有语言标记；无标记时默认 [Chinese]
-    - 规范结果始终为单层 <d>[语言] 对话内容</d>
+    - 已有标签保留其原有语言标记；无标记时使用本次调用的 lang
+    - 规范结果始终为单层 <d> 标签
     - 支持的引号对：
     - ASCII 双引号： "..."
     - 中文弯引号： “...”
@@ -366,23 +367,32 @@ class PromptPeplace:
         return PromptPeplace._QUOTE_CHARS_RE.sub('', content).strip()
 
 
-    def _flatten_dialogue_inner(content):
+    def _normalize_language(lang):
+        """规范语言参数；None、空文本或纯空白均表示不添加语言标记。"""
+        if lang is None:
+            return ""
+        return str(lang).strip()
+
+
+    def _flatten_dialogue_inner(content, default_language):
         """展开嵌套 d 标签与语言标记，并清除内部引号。
 
         返回 (语言单词, 清洗后的对话正文)。
-        若原文无语言标记，语言回退为 Chinese。
+        若原文无语言标记，则使用本次调用指定的默认语言。
         """
         match = PromptPeplace._LANGUAGE_MARK_RE.search(content)
-        language = match.group(1) if match else PromptPeplace._DEFAULT_LANGUAGE
+        language = match.group(1) if match else default_language
         text = PromptPeplace._D_TAG_RE.sub('', content)
         text = PromptPeplace._LANGUAGE_MARK_RE.sub('', text)
         return language, PromptPeplace._strip_quote_chars(text)
 
 
-    def _wrap_dialogue(content):
-        """将对话正文规范包裹为单层 <d>[语言] 内容</d>。"""
-        language, inner = PromptPeplace._flatten_dialogue_inner(content)
-        return f"<d>[{language}] {inner}</d>"
+    def _wrap_dialogue(content, default_language):
+        """将对话正文规范包裹为单层、可选语言标记的 <d> 标签。"""
+        language, inner = PromptPeplace._flatten_dialogue_inner(
+            content, default_language)
+        language_mark = f"[{language}] " if language else " "
+        return f"<d>{language_mark}{inner}</d>"
 
 
     def _starts_open_d(text, index):
@@ -415,11 +425,12 @@ class PromptPeplace:
         return -1
 
 
-    def replace_prompt_dialogues(text):
+    def replace_prompt_dialogues(text, lang=_DEFAULT_LANGUAGE):
         """把输入文本里所有引号内对话内容替换为对话标签。
 
+        lang 默认为 Chinese；传入 None、空文本或纯空白时不添加语言标记。
         已存在的任意 <d>...</d> 保护块不再二次包裹，但会清除内部引号并展平嵌套。
-        保护块会保留已有语言标记（任意语言单词）；新引号对话默认使用 [Chinese]。
+        保护块会保留已有语言标记；没有语言标记时使用本次调用的 lang。
         其它字符原样保留；text 为 None 时按空字符串处理。
         """
         if text is None:
@@ -427,6 +438,7 @@ class PromptPeplace:
         if not isinstance(text, str):
             text = str(text)
 
+        language = PromptPeplace._normalize_language(lang)
         result = []
         index = 0
         length = len(text)
@@ -434,7 +446,8 @@ class PromptPeplace:
             if PromptPeplace._starts_open_d(text, index):
                 close_index = PromptPeplace._find_matching_close_d(text, index)
                 if close_index != -1:
-                    result.append(PromptPeplace._wrap_dialogue(text[index + 3:close_index]))
+                    result.append(PromptPeplace._wrap_dialogue(
+                        text[index + 3:close_index], language))
                     index = close_index + 4
                     continue
             open_quote = text[index]
@@ -442,7 +455,8 @@ class PromptPeplace:
             if close_quote is not None:
                 close_index = text.find(close_quote, index + 1)
                 if close_index != -1:
-                    result.append(PromptPeplace._wrap_dialogue(text[index + 1:close_index]))
+                    result.append(PromptPeplace._wrap_dialogue(
+                        text[index + 1:close_index], language))
                     index = close_index + 1
                     continue
             result.append(text[index])

@@ -10,6 +10,7 @@ from comfy_api.latest import ComfyExtension, io
 
 class AspectRatio(str, Enum):
     SQUARE = "1:1 (Square)"
+    TWO_TO_ONE_H = "2:1 (Cinema 2:1)"
     PHOTO_V = "2:3 (Portrait Photo)"
     PHOTO_H = "3:2 (Photo)"
     STANDARD_V = "3:4 (Portrait Standard)"
@@ -21,6 +22,7 @@ class AspectRatio(str, Enum):
 
 ASPECT_RATIOS: dict[AspectRatio, tuple[int, int]] = {
     AspectRatio.SQUARE: (1, 1),
+    AspectRatio.TWO_TO_ONE_H: (2, 1),
     AspectRatio.PHOTO_V: (2, 3),
     AspectRatio.PHOTO_H: (3, 2),
     AspectRatio.STANDARD_V: (3, 4),
